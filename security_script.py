@@ -1,9 +1,12 @@
 import argparse
+import getpass
 import os
+import re
 import yaml
 
 PRINT_RESET = "\033[0m"
 PRINT_BOLD = "\033[1m"
+PRINT_ITALICS = "\033[3m"
 PRINT_RED = "\033[31m"
 PRINT_GREEN = "\033[32m"
 PRINT_YELLOW = "\033[33m"
@@ -15,6 +18,7 @@ class CurrentUser():
         self.email = None
         self.password = None
         
+    ## For Login ##
     def verifyEmail(self, ymlUser):
 
         if (ymlUser is None):
@@ -24,7 +28,7 @@ class CurrentUser():
         
         return ymlUser
 
-    def validatePassword(self, password, attempts):
+    def verifyPassword(self, password, attempts):
         if (self.password == password):
             print(f"{PRINT_GREEN}Password is valid {PRINT_RESET}")
             self.password = password
@@ -34,6 +38,30 @@ class CurrentUser():
             else:
                 print(f"{PRINT_RED + PRINT_BOLD}You cannot do any more attempts{PRINT_RESET}")
             self.password = None
+
+    ## For Registeration ##
+
+    def validateEmail(self):
+        try:
+            with open('info.yml', 'r') as f:
+                ymlFile = list(yaml.safe_load_all(f))
+                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
+        except FileNotFoundError:
+            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
+
+        if (ymlUser):
+            print(f"{PRINT_RED + PRINT_BOLD}Email already exists in the database.\n{PRINT_RESET + PRINT_RED}Please try a different email")
+            self.email = None
+
+    def validatePassword(self, password):
+        if (self.password == password):
+            print(f"{PRINT_GREEN}Password is valid {PRINT_RESET}")
+            self.password = password
+        else:
+            print(f"{PRINT_RED + PRINT_BOLD}Passwords do not match.\n{PRINT_RESET + PRINT_RED}Please try a different password instead{PRINT_RESET}")
+            self.password = None
+
+        
 
 def userLogIn():
     currentUser = CurrentUser()
@@ -54,8 +82,8 @@ def userLogIn():
     
 
     while ((not currentUser.password) and (_numOfAttempts <= 5)):
-        currentUser.password = input(f"{PRINT_YELLOW}Enter Password:{PRINT_RESET}")
-        currentUser.validatePassword(ymlUser.get('password'), _numOfAttempts)
+        currentUser.password = getpass.getpass(f"{PRINT_YELLOW}Enter Password:{PRINT_RESET}")
+        currentUser.verifyPassword(ymlUser.get('password'), _numOfAttempts)
 
         if (not currentUser.password):
             _numOfAttempts = _numOfAttempts + 1
@@ -67,7 +95,36 @@ def userLogIn():
         return None
 
 def userRegister():
-    pass
+        ### Implement statement for creating a new user
+        # newUser = currentUser()           [Create a new user object]
+        # input("What is your name?: ")     [Asks for new user's email address]
+        # Searches within the yml file for the specific address
+        ## If <email> exists in the database:
+        # print("Email already exists. Unable to make a new profile") and boots back to the prompt
+        ## If <email> does not exist in the database:
+        # input("What is your name?: ")     [Asks for new user's name]
+        # input("What is your password?: ") [Asks for new user's password]
+        # 
+        newUser = CurrentUser()
+        while (not newUser.email):
+            newUser.email = input(f"{PRINT_YELLOW}What is your email?{PRINT_RESET}")
+            if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
+                print(f"{PRINT_RED + PRINT_BOLD}Invalid email.{PRINT_RESET + PRINT_RED}\nMust be in the format: {PRINT_ITALICS}[name]@[website].[domain]{PRINT_RESET}")
+                newUser.email = None
+            newUser.validateEmail()
+        
+        while (not newUser.password):
+            newUser.password = getpass.getpass(f"{PRINT_YELLOW}What is your new password?{PRINT_RESET}")
+            passAuth = getpass.getpass(f"{PRINT_YELLOW}Can you retype your new password?{PRINT_RESET}")
+            newUser.validatePassword(passAuth)
+        
+        newUser.name = input(f"{PRINT_YELLOW}What is your name?{PRINT_RESET}")
+
+        print(f"{PRINT_GREEN}Ok {newUser.name}, you are now able to use your account now!{PRINT_RESET}")
+
+        return newUser
+        
+
 
 def main(args=None):
     _regUserPrompt = ''
@@ -75,21 +132,12 @@ def main(args=None):
 
     while(not _regUserPrompt):
         _regUserPrompt = input(f"{PRINT_YELLOW}Do you want to register a new user {PRINT_BOLD}(y/n){PRINT_RESET}\n")
-        if (_regUserPrompt == 'n'):
-            currentUser = userLogIn()
+        if (_regUserPrompt == 'y'):
+            currentUser = userRegister()
 
-        elif (_regUserPrompt == 'y'):
-            ### Implement statement for creating a new user
-            # newUser = currentUser()           [Create a new user object]
-            # input("What is your name?: ")     [Asks for new user's email address]
-            # Searches within the yml file for the specific address
-            ## If <email> exists in the database:
-            # print("Email already exists. Unable to make a new profile") and boots back to the prompt
-            ## If <email> does not exist in the database:
-            # input("What is your name?: ")     [Asks for new user's name]
-            # input("What is your password?: ") [Asks for new user's password]
-            # 
-            pass 
+        elif (_regUserPrompt == 'n'):
+            
+            currentUser = userLogIn() 
         else:
             print(f"{PRINT_RED + PRINT_BOLD}Invalid Response.{PRINT_RESET + PRINT_RED} Please try again.{PRINT_RESET}")
             _regUserPrompt = ''
