@@ -4,6 +4,11 @@ import os
 import re
 import yaml
 
+from Crypto.PublicKey import RSA
+from Crypto.Cipher import PKCS1_OAEP
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+
 PRINT_RESET = "\033[0m"
 PRINT_BOLD = "\033[1m"
 PRINT_ITALICS = "\033[3m"
@@ -17,9 +22,18 @@ class CurrentUser():
         self.name = None
         self.email = None
         self.password = None
+        self.data = {'name': self.name, 'email' : self.email, 'password' : self.password}
         
-    ## For Login ##
-    def verifyEmail(self, ymlUser):
+    ##--- For Login ---##
+    
+    def verifyEmail(self):
+        try:
+            with open('info.yml', 'r') as f:
+                ymlFile = list(yaml.safe_load_all(f))
+                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
+                print(ymlUser)
+        except FileNotFoundError:
+            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
 
         if (ymlUser is None):
             self.email = None
@@ -39,7 +53,7 @@ class CurrentUser():
                 print(f"{PRINT_RED + PRINT_BOLD}You cannot do any more attempts{PRINT_RESET}")
             self.password = None
 
-    ## For Registeration ##
+    ##--- For Registeration ---##
 
     def validateEmail(self):
         try:
@@ -70,15 +84,7 @@ def userLogIn():
 
     while (not currentUser.email):
         currentUser.email = input(f"{PRINT_YELLOW}Enter Email Address:{PRINT_RESET}")
-
-        try:
-            with open('info.yml', 'r') as f:
-                ymlFile = list(yaml.safe_load_all(f))
-                ymlUser = next((n for n in ymlFile if n.get('email') == currentUser.email), None)
-        except FileNotFoundError:
-            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
-            
-        ymlUser = currentUser.verifyEmail(ymlUser)
+        ymlUser = currentUser.verifyEmail()
     
 
     while ((not currentUser.password) and (_numOfAttempts <= 5)):
@@ -95,34 +101,30 @@ def userLogIn():
         return None
 
 def userRegister():
-        ### Implement statement for creating a new user
-        # newUser = currentUser()           [Create a new user object]
-        # input("What is your name?: ")     [Asks for new user's email address]
-        # Searches within the yml file for the specific address
-        ## If <email> exists in the database:
-        # print("Email already exists. Unable to make a new profile") and boots back to the prompt
-        ## If <email> does not exist in the database:
-        # input("What is your name?: ")     [Asks for new user's name]
-        # input("What is your password?: ") [Asks for new user's password]
-        # 
-        newUser = CurrentUser()
-        while (not newUser.email):
-            newUser.email = input(f"{PRINT_YELLOW}What is your email?{PRINT_RESET}")
-            if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
-                print(f"{PRINT_RED + PRINT_BOLD}Invalid email.{PRINT_RESET + PRINT_RED}\nMust be in the format: {PRINT_ITALICS}[name]@[website].[domain]{PRINT_RESET}")
-                newUser.email = None
-            newUser.validateEmail()
         
-        while (not newUser.password):
-            newUser.password = getpass.getpass(f"{PRINT_YELLOW}What is your new password?{PRINT_RESET}")
-            passAuth = getpass.getpass(f"{PRINT_YELLOW}Can you retype your new password?{PRINT_RESET}")
-            newUser.validatePassword(passAuth)
-        
-        newUser.name = input(f"{PRINT_YELLOW}What is your name?{PRINT_RESET}")
+    newUser = CurrentUser()
+    while (not newUser.email):
+        newUser.email = input(f"{PRINT_YELLOW}What is your email?{PRINT_RESET}")
+        if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
+            print(f"{PRINT_RED + PRINT_BOLD}Invalid email.{PRINT_RESET + PRINT_RED}\nMust be in the format: {PRINT_ITALICS}[name]@[website].[domain]{PRINT_RESET}")
+            newUser.email = None
+        newUser.validateEmail()
+    
+    while (not newUser.password):
+        newUser.password = getpass.getpass(f"{PRINT_YELLOW}What is your new password?{PRINT_RESET}")
+        passAuth = getpass.getpass(f"{PRINT_YELLOW}Can you retype your new password?{PRINT_RESET}")
+        newUser.validatePassword(passAuth)
+    
+    newUser.name = input(f"{PRINT_YELLOW}What is your name?{PRINT_RESET}")
 
-        print(f"{PRINT_GREEN}Ok {newUser.name}, you are now able to use your account now!{PRINT_RESET}")
+    newUser.data = {'name': newUser.name, 'email' : newUser.email, 'password' : newUser.password}
+    with open('info.yml', 'a+') as f:
+        f.write("...\n---\n")
+        yaml.dump(newUser.data, f)
 
-        return newUser
+    print(f"{PRINT_GREEN}Ok {newUser.name}, you are now able to use your account now!{PRINT_RESET}")
+
+    return newUser
         
 
 

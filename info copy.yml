@@ -22,13 +22,3 @@ password: __p
 name: Jimmy Jones
 email: jjones12325674@outlook.office360.com
 password: password?
-...
----
-email: test.test@test.test
-name: test
-password: test
-...
----
-email: test@test.test
-name: test
-password: 'no'
