@@ -1,8 +1,8 @@
-import getpass
 import os
 import re
 import yaml
 from termcolor import colored
+import pwinput
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
@@ -172,7 +172,7 @@ def userRegister():
     while (not _isUserValid):
         
         while (not newUser.email):
-            newUser.email = input(colored(f"What is your email?", "yellow"))
+            newUser.email = input(colored(f"What is your email? ", "yellow"))
 
             if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
                 print(colored(f"Invalid email.", "red", attrs=["bold"]))
@@ -180,8 +180,8 @@ def userRegister():
                 newUser.email = None
         
         while (not newUser.password):
-            newUser.password = getpass.getpass(colored(f"What is your new password?", "yellow"), echo_char='*')
-            passAuth = getpass.getpass(colored(f"Can you retype your new password?", "yellow"), echo_char='*')
+            newUser.password = pwinput.pwinput(colored(f"What is your new password? ", "yellow"))
+            passAuth = pwinput.pwinput(colored(f"Can you retype your new password? ", "yellow"))
 
             if (newUser.password == passAuth):
                 newUser.password = passAuth
@@ -190,7 +190,7 @@ def userRegister():
                 print(colored(f"Please try a different password instead", "red", attrs=["bold"]))
                 newUser.password = None
         
-        newUser.name = input(colored(f"What is your name?", "yellow"))
+        newUser.name = input(colored(f"What is your name? ", "yellow"))
 
         _isUserValid = newUser.verifyUser(True)
 
@@ -223,10 +223,10 @@ def userLogIn():
 
     while (not _isUserValid):
         while (not currentUser.email):
-            currentUser.email = input(colored(f"Enter Email Address:", "yellow"))
+            currentUser.email = input(colored(f"Enter Email Address: ", "yellow"))
 
         while ((not currentUser.password) and (_numOfAttempts <= 5)):
-            currentUser.password = getpass.getpass(colored(f"Enter Password:", "yellow"), echo_char='*')
+            currentUser.password = pwinput.pwinput(colored(f"Enter Password: ", "yellow"))
 
         _isUserValid = currentUser.verifyUser(False, attempts=_numOfAttempts)
 
@@ -250,7 +250,7 @@ def main(args=None):
         user = userLogIn()
     else:
         print("No users are registered with this client.")
-        _regUserPrompt = input(colored(f"Do you want to register a new user (y/n)", "yellow"))
+        _regUserPrompt = input(colored(f"Do you want to register a new user (y/n) ", "yellow"))
 
         if (_regUserPrompt == 'y'):
             Security.rsaKeyGen()

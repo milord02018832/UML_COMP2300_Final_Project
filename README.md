@@ -6,6 +6,8 @@ Christian Milord, Theodor Farag,
 pip install pyyaml<br>
 pip install pycryptodome<br>
 pip install termcolor<br>
+pip install pwinput<br>
+
 
 ### Virtual Environment
 - python3 -m venv <Name of the virtual environment>
