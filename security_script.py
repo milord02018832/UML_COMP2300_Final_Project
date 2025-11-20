@@ -2,18 +2,12 @@ import getpass
 import os
 import re
 import yaml
+from termcolor import colored
 
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
-
-PRINT_RESET = "\033[0m"
-PRINT_BOLD = "\033[1m"
-PRINT_ITALICS = "\033[3m"
-PRINT_RED = "\033[31m"
-PRINT_GREEN = "\033[32m"
-PRINT_YELLOW = "\033[33m"
 
 RSA_NONCE_SIZE = 16
 RSA_TAG_SIZE = 16
@@ -31,152 +25,110 @@ def helpMessage() -> None:
         "\"exit\" -> Exit SecureDrop\n"
     )
 
-class CurrentUser():
+class User():
+    """
+    The login information of a user
+        
+    Attributes:
+        name (str): The name of the user
+        email (str): The email of the user
+        password (str): The password of the user
+        data (list): The packaged login information (used for yaml export)
+    """
+
     def __init__(self):
         self.name = None
         self.email = None
         self.password = None
         self.data = {'name': self.name, 'email' : self.email, 'password' : self.password}
         
-    ##--- For Login ---##
+
     
-    """
-    def verifyEmail(self):
-        try:
-            with open('info.yml', 'r') as f:
-                ymlFile = list(yaml.safe_load_all(f))
-                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
-        except FileNotFoundError:
-            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
-
-        if (ymlUser is None):
-            self.email = None
-            print(f"{PRINT_RED + PRINT_BOLD}Email does not exist{PRINT_RESET}")
-            return None
+    def verifyUser(self, isNewUser, attempts = 0):
+        """
+        Returns a boolean for whether user is valid or not
         
-        return ymlUser
-
-    def verifyPassword(self, password, attempts):
-        if (self.password == password):
-            print(f"{PRINT_GREEN}Password is valid {PRINT_RESET}")
-            self.password = password
+            isNewUser = A boolean determining whether user is registering a new account (True) or logging in (False)
+            attempts = An integer displaying number of login attempts; Used exclusively for userLogIn()
+        """
+        
+        if (os.path.exists("userInfo.txt")):
+            loadedData = yaml.safe_load(Security.decryptScript().decode('utf-8'))
+            if (isinstance(loadedData, list)):
+                ymlFile = loadedData
+            elif (isinstance(loadedData, dict)):
+                ymlFile = [loadedData]
         else:
-            if (attempts < 5):
-                print(f"{PRINT_RED + PRINT_BOLD}Invalid Password.\n{PRINT_RESET + PRINT_RED}You have {5 - attempts} attempts left.\nEnter the information again:{PRINT_RESET}")
-            else:
-                print(f"{PRINT_RED + PRINT_BOLD}You cannot do any more attempts{PRINT_RESET}")
-            self.password = None
-    """
+            ymlFile = []
 
-    def verifyUser(self, password, attempts):
-        try:
-            with open('info.yml', 'r') as f:
-                Security.decryptScript()
-                ymlFile = list(yaml.safe_load_all(f))
-                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
-                
-        except FileNotFoundError:
-            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
+        ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
+
+        if (isNewUser):
+            if (ymlUser):
+                self.email = None
+        else:
+            if (not ymlUser):
+                self.email = None
+                self.password = None
+            else:
+                if (self.password == ymlUser.get('password')):
+                    self.password = ymlUser.get('password')
+                    self.name = ymlUser.get('name')
+                else:
+                    self.email = None
+                    self.password = None
+
+        if (not self.email or not self.password):
+            if (isNewUser):
+                print(colored(f"User already exists in the database.", "red", attrs=["bold"]))
+                print(colored(f"Please try again", "red"))
+            else:
+                if (attempts < 5):
+                    print(colored(f"Email and Password Combination Invalid.", "red", attrs=["bold"]))
+                    print(colored(f"You have {5 - attempts} attempts left.\nEnter the information again:", "red"))
+                else:
+                    print(colored(f"You cannot do any more attempts", "red", attrs=["bold"]))
+
             return False
 
-        ymlFile = list(yaml.safe_load(Security.decryptScript()))
-
-        if (ymlUser is None):
-            self.email = None
-        
-        if (self.password == password):
-            self.password = password
-        else:
-            self.password = None
-    
-        if (ymlUser is None or self.password is None):
-            if (attempts < 5):
-                print(f"""{PRINT_RED + PRINT_BOLD}Email and Password Combination Invalid.\n{PRINT_RESET + PRINT_RED}
-                      You have {5 - attempts} attempts left.\nEnter the information again:{PRINT_RESET}""")
-            else:
-                print(f"{PRINT_RED + PRINT_BOLD}You cannot do any more attempts{PRINT_RESET}")
-
-            return False
-        
         return True
-            
-
-
-    ##--- For Registeration ---##
-    """
-    def validateEmail(self):
-        try:
-            with open('info.yml', 'r') as f:
-                ymlFile = list(yaml.safe_load_all(f))
-                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
-        except FileNotFoundError:
-            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
-
-        if (ymlUser):
-            print(f"{PRINT_RED + PRINT_BOLD}Email already exists in the database.\n{PRINT_RESET + PRINT_RED}Please try a different email")
-            self.email = None
-
-    def validatePassword(self, password):
-        if (self.password == password):
-            print(f"{PRINT_GREEN}Password is valid {PRINT_RESET}")
-            self.password = password
-        else:
-            print(f"{PRINT_RED + PRINT_BOLD}Passwords do not match.\n{PRINT_RESET + PRINT_RED}Please try a different password instead{PRINT_RESET}")
-            self.password = None
-
-    """
-    def validateUser(self, password):
-        try:
-            with open('info.yml', 'r') as f:
-                ymlFile = list(yaml.safe_load_all(f))
-                ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
-        except FileNotFoundError:
-            print(f"{PRINT_RED + PRINT_BOLD}File does not exist{PRINT_RESET}")
-
-        if (ymlUser):
-            print(f"{PRINT_RED + PRINT_BOLD}Email already exists in the database.\n{PRINT_RESET + PRINT_RED}Please try a different email")
-            self.email = None
         
-        if (self.password == password):
-            print(f"{PRINT_GREEN}Password is valid {PRINT_RESET}")
-            self.password = password
-        else:
-            print(f"{PRINT_RED + PRINT_BOLD}Passwords do not match.\n{PRINT_RESET + PRINT_RED}Please try a different password instead{PRINT_RESET}")
-            self.password = None
 
 class Security():
-    def __init__(self):
-        _pub_key = None
-        _priv_key = None
 
-    def rsaKeyGen(self):
-        from Crypto.PublicKey import RSA
+    def rsaKeyGen():
+        """
+        The private and public key generation
+        """
 
+        pubKey = None
+        privKey = None
         key = RSA.generate(2048)
 
-        self._priv_key = key.export_key()
+        privKey = key.export_key()
         with open("private.pem", "wb") as f:
-            f.write(self._priv_key)
+            f.write(privKey)
 
-        self._pub_key = key.publickey().export_key()
+        pubKey = key.publickey().export_key()
         with open("public.pub", "wb") as f:
-            f.write(self._pub_key)
+            f.write(pubKey)
 
-        print("Keys generated and saved to 'private.pem' and 'public.pub'")
-
-    def encryptScript(self, decoded_text, output_fn):
-
+    def encryptScript(decoded_text):
+        """
+        Encrypted the given data into the file using the public key.
+        """
+        
         with open("public.pub", "rb") as key_file:
-            self._pub_key = RSA.import_key(key_file.read())
+            pubKey = RSA.import_key(key_file.read())
         
         session_key = get_random_bytes(16)
         cipher_aes = AES.new(session_key, AES.MODE_EAX)
         cipherText, tag = cipher_aes.encrypt_and_digest(decoded_text)
 
-        rsa_cipher = PKCS1_OAEP.new(self._pub_key)
+        rsa_cipher = PKCS1_OAEP.new(pubKey)
         encrypted_session_key = rsa_cipher.encrypt(session_key)
 
-        with open(output_fn, 'wb') as output_file:
+        with open("userInfo.txt", 'wb') as output_file:
             output_file.write(encrypted_session_key)
             output_file.write(cipher_aes.nonce)
             output_file.write(tag)
@@ -184,124 +136,134 @@ class Security():
 
 
 
-    def decryptScript(self):
-
+    def decryptScript():
+        """
+        Returns the decrypted data using the private key
+        """
+        
         decoded_text = ""
-
+        
         with open("private.pem", "rb") as key_file:
-            self._priv_key = RSA.import_key(key_file.read())
+            privKey = RSA.import_key(key_file.read())
+            privKey.size_in_bytes()
 
         with open("userInfo.txt", 'rb') as input_file:
-            encrypted_session_key = input_file.read(self._priv_key.size_in_bytes())
+            encrypted_session_key = input_file.read(privKey.size_in_bytes())
             nonce = input_file.read(RSA_NONCE_SIZE)
             tag = input_file.read(RSA_TAG_SIZE)
             cipherText = input_file.read()
 
-            rsa_cipher = PKCS1_OAEP.new(self._priv_key)
+            rsa_cipher = PKCS1_OAEP.new(privKey)
             session_key = rsa_cipher.decrypt(encrypted_session_key)
 
             cipher_aes = AES.new(session_key, AES.MODE_EAX, nonce)
             decoded_text = cipher_aes.decrypt_and_verify(cipherText, tag)
-            
+
         return decoded_text
+
+def userRegister():
+    """
+    Creates a new account for the user
+    """
+        
+    newUser = User()
+    _isUserValid = False
+
+    while (not _isUserValid):
+        
+        while (not newUser.email):
+            newUser.email = input(colored(f"What is your email?", "yellow"))
+
+            if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
+                print(colored(f"Invalid email.", "red", attrs=["bold"]))
+                print(colored(f"Must be in the format: [name]@[website].[domain]", "red"))
+                newUser.email = None
+        
+        while (not newUser.password):
+            newUser.password = getpass.getpass(colored(f"What is your new password?", "yellow"), echo_char='*')
+            passAuth = getpass.getpass(colored(f"Can you retype your new password?", "yellow"), echo_char='*')
+
+            if (newUser.password == passAuth):
+                newUser.password = passAuth
+            else:
+                print(colored(f"Passwords do not match.", "red", attrs=["bold"]))
+                print(colored(f"Please try a different password instead", "red", attrs=["bold"]))
+                newUser.password = None
+        
+        newUser.name = input(colored(f"What is your name?", "yellow"))
+
+        _isUserValid = newUser.verifyUser(True)
+
+
+    newUser.data = {'name': newUser.name, 'email' : newUser.email, 'password' : newUser.password}
+
+    try:
+        if (os.path.getsize("userInfo.txt")):
+            currentData = yaml.safe_load(Security.decryptScript()) + "...\n---\n"
+    except FileNotFoundError:
+        currentData = "---\n"
+
+    currentData = currentData + yaml.safe_dump(newUser.data)
+
+    Security.encryptScript(currentData.encode('utf-8'))
+
+    print(colored(f"Ok {newUser.name}, you are now able to use your account now!", "green"))
+
+    return newUser
 
 
 def userLogIn():
-    currentUser = CurrentUser()
-    ymlUser = None
+    """
+    Logs in into an existing account for the user
+    """
+
+    currentUser = User()
+    _isUserValid = False
     _numOfAttempts = 0
 
-    while (not currentUser.email):
-        currentUser.email = input(f"{PRINT_YELLOW}Enter Email Address:{PRINT_RESET}")
-        ymlUser = currentUser.verifyEmail()
-    
+    while (not _isUserValid):
+        while (not currentUser.email):
+            currentUser.email = input(colored(f"Enter Email Address:", "yellow"))
 
-    while ((not currentUser.password) and (_numOfAttempts <= 5)):
-        currentUser.password = getpass.getpass(f"{PRINT_YELLOW}Enter Password:{PRINT_RESET}", echo_char='*')
-        currentUser.verifyPassword(ymlUser.get('password'), _numOfAttempts)
+        while ((not currentUser.password) and (_numOfAttempts <= 5)):
+            currentUser.password = getpass.getpass(colored(f"Enter Password:", "yellow"), echo_char='*')
 
-        if (not currentUser.password):
-            _numOfAttempts = _numOfAttempts + 1
+        _isUserValid = currentUser.verifyUser(False, attempts=_numOfAttempts)
 
-    if (currentUser.password):
-        print(f"{PRINT_GREEN + PRINT_BOLD}Login Complete{PRINT_RESET}")
-        return currentUser
-    else:
-        return None
+        if (not _isUserValid):
+            if (_numOfAttempts < 5):
+                _numOfAttempts = _numOfAttempts + 1
+            else:
+                quit()
 
-def userRegister():
-        
-    newUser = CurrentUser()
-    while (not newUser.email):
-        newUser.email = input(f"{PRINT_YELLOW}What is your email?{PRINT_RESET}")
-        if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
-            print(f"{PRINT_RED + PRINT_BOLD}Invalid email.{PRINT_RESET + PRINT_RED}\nMust be in the format: {PRINT_ITALICS}[name]@[website].[domain]{PRINT_RESET}")
-            newUser.email = None
-        newUser.validateEmail()
-    
-    while (not newUser.password):
-        newUser.password = getpass.getpass(f"{PRINT_YELLOW}What is your new password?{PRINT_RESET}", echo_char='*')
-        passAuth = getpass.getpass(f"{PRINT_YELLOW}Can you retype your new password?{PRINT_RESET}", echo_char='*')
-        newUser.validatePassword(passAuth)
-    
-    newUser.name = input(f"{PRINT_YELLOW}What is your name?{PRINT_RESET}")
+    print(colored(f"Login Complete", "green"))
+    return currentUser
 
-    newUser.data = {'name': newUser.name, 'email' : newUser.email, 'password' : newUser.password}
-    with open('info.yml', 'a+') as f:
-        Security.decryptScript()
-        f.write("...\n---\n")
-        yaml.dump(newUser.data, f)
-
-    print(f"{PRINT_GREEN}Ok {newUser.name}, you are now able to use your account now!{PRINT_RESET}")
-
-    return newUser
-        
 
 
 def main(args=None):
     _regUserPrompt = ''
-    currentUser = CurrentUser()
-    currentSec = Security()
+    user = User()
     
     if (os.path.exists("userInfo.txt")):
-        with open("private.pem", 'rb') as key_file:
-            currentSec._priv_key = RSA.import_key(key_file.read())
-            currentSec._priv_key.size_in_bytes()
 
-        with open("public.pub", 'rb') as key_file:
-            currentSec._pub_key = RSA.import_key(key_file.read())
-
-        userLogIn(currentSec)
+        user = userLogIn()
     else:
-        _regUserPrompt = input(f"{PRINT_YELLOW}Do you want to register a new user {PRINT_BOLD}(y/n){PRINT_RESET}\n")
+        print("No users are registered with this client.")
+        _regUserPrompt = input(colored(f"Do you want to register a new user (y/n)", "yellow"))
 
         if (_regUserPrompt == 'y'):
-            currentSec.rsaKeyGen()
-            f = open("uInfo.txt", "x")
-            f.close()
-            currentUser = userRegister(currentSec)
+            Security.rsaKeyGen()
+            user = userRegister()
 
         elif (_regUserPrompt == 'n'):
-            exit()
+            quit()
         else:
-            print(f"{PRINT_RED + PRINT_BOLD}Invalid Response.{PRINT_RESET + PRINT_RED} Please try again.{PRINT_RESET}")
+            print(colored(f"Invalid Response.", "red", attrs=["bold"]))
+            print(colored(f"Please try again.", "red"))
             _regUserPrompt = ''
 
-    
-    """
-    while(not _regUserPrompt):
-        _regUserPrompt = input(f"{PRINT_YELLOW}Do you want to register a new user {PRINT_BOLD}(y/n){PRINT_RESET}\n")
-        if (_regUserPrompt == 'y'):
-            currentUser = userRegister()
-
-        elif (_regUserPrompt == 'n'):
-            
-            currentUser = userLogIn() 
-        else:
-            print(f"{PRINT_RED + PRINT_BOLD}Invalid Response.{PRINT_RESET + PRINT_RED} Please try again.{PRINT_RESET}")
-            _regUserPrompt = ''
-
-    """
+    print(f"Hello {user.name}, Welcome to Secure Boot")
 
 
 if __name__ == '__main__':
