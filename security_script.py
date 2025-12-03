@@ -22,7 +22,7 @@ def helpMessage() -> None:
         "\"add\" -> Add a new contact\n" \
         "\"list\" -> List all online contacts\n" \
         "\"send\" -> Transfer file to contact\n" \
-        "\"exit\" -> Exit SecureDrop\n"
+        "\"exit\" -> Exit SecureDrop"
     )
 
 class User():
@@ -253,43 +253,44 @@ def userLogIn():
         else:
             ymlFile = []
 
-        while (not currentUser.email):
+        password = None
+        while ((not currentUser.email) and (not password) and (_numOfAttempts < 5)):
             currentUser.email = input(colored(f"Enter Email Address: ", "yellow"))
             ymlUser = next((n for n in ymlFile if n.get('email') == currentUser.email), None)
-            if not ymlUser:
-                print(colored(f"Email not found.", "red", attrs=["bold"]))
-                currentUser.email = None
 
-        password = None
-        while ((not password) and (_numOfAttempts < 5)):
+            if not ymlUser:
+                currentUser.email = None
             password = pwinput.pwinput(colored(f"Enter Password: ", "yellow"))
 
-        if ymlUser:
-            salt = ymlUser.get('salt')
-            password_hash = ymlUser.get('password_hash')
-            if salt and password_hash:
-                test_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
-                if test_hash == password_hash:
-                    currentUser.password_hash = password_hash
-                    currentUser.salt = salt
-                    currentUser.name = ymlUser.get('name')
-                    _isUserValid = True
+            if ymlUser:
+                salt = ymlUser.get('salt')
+                password_hash = ymlUser.get('password_hash')
+                if salt and password_hash:
+                    test_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+                    if test_hash == password_hash:
+                        currentUser.password_hash = password_hash
+                        currentUser.salt = salt
+                        currentUser.name = ymlUser.get('name')
+                        _isUserValid = True
+                    else:
+                        _numOfAttempts += 1
+                        if _numOfAttempts >= 5:
+                            print(colored("Deactivating Too many login attempts", 'red', attrs=['bold']))
+                            quit()
+                        print(colored(f"Email and Password Combination Invalid.", "red", attrs=["bold"]))
+                        print(colored(f"You have {5 - _numOfAttempts} attempts left, try again.", "red"))
+                        password = None
                 else:
-                    _numOfAttempts += 1
-                    if _numOfAttempts >= 5:
-                        print(colored("Deactivating Too many login attempts", 'red', attrs=['bold']))
-                        quit()
-                    print(colored(f"Email and Password Combination Invalid.", "red", attrs=["bold"]))
-                    print(colored(f"You have {5 - _numOfAttempts} attempts left, try again.", "red"))
-                    password = None
+                    print(colored(f"User record corrupted.", "red", attrs=["bold"]))
+                    quit()
             else:
-                print(colored(f"User record corrupted.", "red", attrs=["bold"]))
-                quit()
-        else:
-            password = None
-            _numOfAttempts += 1
-            if (_numOfAttempts > 5):
-                quit()
+                _numOfAttempts += 1
+                password = None
+                print(colored(f"Email and Password Combination Invalid.", "red", attrs=["bold"]))
+                print(colored(f"You have {5 - _numOfAttempts} attempts left", "red"))
+                if (_numOfAttempts >= 5):
+                    print(colored("Deactivating Too many login attempts", 'red', attrs=['bold']))
+                    quit()
 
     print(colored(f"Login Complete", "green"))
     return currentUser
@@ -318,13 +319,12 @@ def main(args=None):
             print(colored(f"Please try again.", "red"))
             _regUserPrompt = ''
 
-    print(f"Hello {user.name}, Welcome to Secure Boot")
+    print(f"Hello {user.name}, Welcome to SecureDrop")
 
     # Milestone 3: Secure Contacts management
-    print(user.data)
     from contacts_secure import add_contact, list_contacts
     while True:
-        cmd = input(colored("secure_drop>" , "yellow")).strip().lower()
+        cmd = input(colored("secure_drop> " , "yellow")).strip().lower()
         if not user.password_hash or not user.salt:
             print(colored("Error: User credentials missing. Please log in again.", "red"))
             break
@@ -355,8 +355,10 @@ def main(args=None):
         elif cmd == "exit":
             print(colored("Exiting SecureDrop...", "cyan"))
             break
-        elif cmd.lower() == "help":
+        elif cmd == "help":
             helpMessage()
+        elif cmd == "send":
+            print("Coming soon!")
         else:
             print(colored("Unknown command.", "red"))
 
