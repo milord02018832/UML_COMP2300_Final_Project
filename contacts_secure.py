@@ -54,11 +54,14 @@ def save_contacts(email, password_hash, salt, contacts):
 
 def add_contact(email, password_hash, salt, contact_email):
     contacts = load_contacts(email, password_hash, salt)
-    if contact_email in contacts:
-        raise ValueError("Contact already added.")
-    contacts.append(contact_email)
-    save_contacts(email, password_hash, salt, contacts)
-    return True
+    # Check for duplicate by email
+    for c in contacts:
+        if isinstance(c, dict) and c.get('email') == contact_email:
+            raise ValueError("Contact already added.")
+        elif isinstance(c, str) and c == contact_email:
+            raise ValueError("Contact already added (old format). Please remove and re-add.")
+    # Prompt for full name (handled in CLI, so accept as argument)
+    raise NotImplementedError("add_contact now requires a full_name argument. Update CLI to pass full_name.")
 
 
 def list_contacts(email, password_hash, salt):

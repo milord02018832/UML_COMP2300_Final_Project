@@ -330,6 +330,12 @@ def main(args=None):
             break
         if cmd == "add":
             contact_email = None
+            full_name = None
+            while not full_name:
+                full_name = input(colored("Enter contact's full name: ", "yellow")).strip()
+                if not re.match(r"^[A-Za-z0-9 .'-]+$", full_name):
+                    print(colored("Invalid name. Use only letters, numbers, spaces, and .'-", "red"))
+                    full_name = None
             while not contact_email:
                 contact_email = input(colored("Enter contact's email: ", "yellow")).strip()
                 if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", contact_email):
@@ -337,8 +343,17 @@ def main(args=None):
                     contact_email = None
                     continue
             try:
-                add_contact(user.email, user.password_hash, user.salt, contact_email)
-                print(colored(f"Contact {contact_email} added.", "green"))
+                # Patch: add_contact now expects full_name
+                from contacts_secure import load_contacts, save_contacts
+                contacts = load_contacts(user.email, user.password_hash, user.salt)
+                for c in contacts:
+                    if isinstance(c, dict) and c.get('email') == contact_email:
+                        raise ValueError("Contact already added.")
+                    elif isinstance(c, str) and c == contact_email:
+                        raise ValueError("Contact already added (old format). Please remove and re-add.")
+                contacts.append({'email': contact_email, 'full_name': full_name})
+                save_contacts(user.email, user.password_hash, user.salt, contacts)
+                print(colored(f"Contact {full_name} <{contact_email}> added.", "green"))
             except Exception as e:
                 print(colored(f"Error: {e}", "red"))
         elif cmd == "list":
@@ -347,7 +362,12 @@ def main(args=None):
                 if contacts and len(contacts) > 0:
                     print(colored("Your contacts:", "green"))
                     for c in contacts:
-                        print(f"- {c}")
+                        if isinstance(c, dict) and 'full_name' in c and 'email' in c:
+                            print(f"- {c['full_name']} <{c['email']}>")
+                        elif isinstance(c, str):
+                            print(f"- {c}")
+                        else:
+                            print(f"- {c}")
                 else:
                     print(colored("No contacts found.", "yellow"))
             except Exception as e:
