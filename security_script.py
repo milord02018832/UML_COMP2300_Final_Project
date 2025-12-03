@@ -39,8 +39,9 @@ class User():
     def __init__(self):
         self.name = None
         self.email = None
-        self.password = None
-        self.data = {'name': self.name, 'email' : self.email, 'password' : self.password}
+        self.password_hash = None
+        self.salt = None
+        self.data = {'name': self.name, 'email' : self.email, 'password_hash' : self.password_hash, 'salt': self.salt}
         
 
     
@@ -63,22 +64,31 @@ class User():
 
         ymlUser = next((n for n in ymlFile if n.get('email') == self.email), None)
 
+        import hashlib
         if (isNewUser):
             if (ymlUser):
                 self.email = None
         else:
             if (not ymlUser):
                 self.email = None
-                self.password = None
+                self.password_hash = None
             else:
-                if (self.password == ymlUser.get('password')):
-                    self.password = ymlUser.get('password')
-                    self.name = ymlUser.get('name')
+                # Hash the entered password with the stored salt and compare
+                salt = ymlUser.get('salt')
+                password_hash = ymlUser.get('password_hash')
+                if salt and password_hash:
+                    test_hash = hashlib.sha256((salt + self.password_hash).encode('utf-8')).hexdigest()
+                    if test_hash == password_hash:
+                        self.password_hash = password_hash
+                        self.name = ymlUser.get('name')
+                    else:
+                        self.email = None
+                        self.password_hash = None
                 else:
                     self.email = None
-                    self.password = None
+                    self.password_hash = None
 
-        if (not self.email or not self.password):
+        if (not self.email or not self.password_hash):
             if (isNewUser):
                 print(colored(f"User already exists in the database.", "red", attrs=["bold"]))
                 print(colored(f"Please try again", "red"))
@@ -169,33 +179,38 @@ def userRegister():
     newUser = User()
     _isUserValid = False
 
+    import hashlib, base64, secrets
     while (not _isUserValid):
-        
         while (not newUser.email):
             newUser.email = input(colored(f"What is your email? ", "yellow"))
-
             if (not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", newUser.email)):
                 print(colored(f"Invalid email.", "red", attrs=["bold"]))
                 print(colored(f"Must be in the format: [name]@[website].[domain]", "red"))
                 newUser.email = None
-        
-        while (not newUser.password):
-            newUser.password = pwinput.pwinput(colored(f"What is your new password? ", "yellow"))
+        while (not newUser.password_hash):
+            password = pwinput.pwinput(colored(f"What is your new password? ", "yellow"))
             passAuth = pwinput.pwinput(colored(f"Can you retype your new password? ", "yellow"))
-
-            if (newUser.password == passAuth):
-                newUser.password = passAuth
+            if (password == passAuth):
+                # Generate salt and hash
+                salt = base64.b64encode(secrets.token_bytes(16)).decode('utf-8')
+                password_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+                newUser.salt = salt
+                newUser.password_hash = password_hash
             else:
                 print(colored(f"Passwords do not match.", "red", attrs=["bold"]))
                 print(colored(f"Please try a different password instead", "red", attrs=["bold"]))
-                newUser.password = None
-        
-        newUser.name = input(colored(f"What is your name? ", "yellow"))
-
+                newUser.password_hash = None
+        while (not newUser.name):
+            name = input(colored(f"What is your name? ", "yellow"))
+            # Sanitize name input
+            if re.match(r"^[A-Za-z0-9 .'-]+$", name):
+                newUser.name = name
+            else:
+                print(colored(f"Invalid name. Use only letters, numbers, spaces, and .'-", "red"))
+                newUser.name = None
         _isUserValid = newUser.verifyUser(True)
 
-
-    newUser.data = {'name': newUser.name, 'email' : newUser.email, 'password' : newUser.password}
+    newUser.data = {'name': newUser.name, 'email' : newUser.email, 'password_hash' : newUser.password_hash, 'salt': newUser.salt}
 
     try:
         if (os.path.getsize("userInfo.txt")):
@@ -209,6 +224,10 @@ def userRegister():
 
     print(colored(f"Ok {newUser.name}, you are now able to use your account now!", "green"))
 
+    # Remove plaintext password from memory
+    password = None
+    passAuth = None
+
     return newUser
 
 
@@ -217,23 +236,59 @@ def userLogIn():
     Logs in into an existing account for the user
     """
 
+    import hashlib
     currentUser = User()
     _isUserValid = False
     _numOfAttempts = 0
 
     while (not _isUserValid):
+
+        # Load user info and hash the entered password with the stored salt
+        if (os.path.exists("userInfo.txt")):
+            loadedData = yaml.safe_load(Security.decryptScript().decode('utf-8'))
+            if (isinstance(loadedData, list)):
+                ymlFile = loadedData
+            elif (isinstance(loadedData, dict)):
+                ymlFile = [loadedData]
+        else:
+            ymlFile = []
+
         while (not currentUser.email):
             currentUser.email = input(colored(f"Enter Email Address: ", "yellow"))
+            ymlUser = next((n for n in ymlFile if n.get('email') == currentUser.email), None)
+            if not ymlUser:
+                print(colored(f"Email not found.", "red", attrs=["bold"]))
+                currentUser.email = None
 
-        while ((not currentUser.password) and (_numOfAttempts <= 5)):
-            currentUser.password = pwinput.pwinput(colored(f"Enter Password: ", "yellow"))
 
-        _isUserValid = currentUser.verifyUser(False, attempts=_numOfAttempts)
+        password = None
+        while ((not password) and (_numOfAttempts < 5)):
+            password = pwinput.pwinput(colored(f"Enter Password: ", "yellow"))
 
-        if (not _isUserValid):
-            if (_numOfAttempts < 5):
-                _numOfAttempts = _numOfAttempts + 1
+        if ymlUser:
+            salt = ymlUser.get('salt')
+            password_hash = ymlUser.get('password_hash')
+            if salt and password_hash:
+                test_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
+                if test_hash == password_hash:
+                    currentUser.password_hash = password_hash
+                    currentUser.name = ymlUser.get('name')
+                    _isUserValid = True
+                else:
+                    _numOfAttempts += 1
+                    if _numOfAttempts >= 5:
+                        print(colored("Deactivating Too many login attempts", 'red', attrs=['bold']))
+                        quit()
+                    print(colored(f"Email and Password Combination Invalid.", "red", attrs=["bold"]))
+                    print(colored(f"You have {5 - _numOfAttempts} attempts left, try again.", "red"))
+                    password = None
             else:
+                print(colored(f"User record corrupted.", "red", attrs=["bold"]))
+                quit()
+        else:
+            password = None
+            _numOfAttempts += 1
+            if (_numOfAttempts > 5):
                 quit()
 
     print(colored(f"Login Complete", "green"))
