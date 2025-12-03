@@ -240,9 +240,9 @@ def userLogIn():
     currentUser = User()
     _isUserValid = False
     _numOfAttempts = 0
+    ymlUser = None
 
     while (not _isUserValid):
-
         # Load user info and hash the entered password with the stored salt
         if (os.path.exists("userInfo.txt")):
             loadedData = yaml.safe_load(Security.decryptScript().decode('utf-8'))
@@ -260,7 +260,6 @@ def userLogIn():
                 print(colored(f"Email not found.", "red", attrs=["bold"]))
                 currentUser.email = None
 
-
         password = None
         while ((not password) and (_numOfAttempts < 5)):
             password = pwinput.pwinput(colored(f"Enter Password: ", "yellow"))
@@ -272,6 +271,7 @@ def userLogIn():
                 test_hash = hashlib.sha256((salt + password).encode('utf-8')).hexdigest()
                 if test_hash == password_hash:
                     currentUser.password_hash = password_hash
+                    currentUser.salt = salt
                     currentUser.name = ymlUser.get('name')
                     _isUserValid = True
                 else:
@@ -319,6 +319,46 @@ def main(args=None):
             _regUserPrompt = ''
 
     print(f"Hello {user.name}, Welcome to Secure Boot")
+
+    # Milestone 3: Secure Contacts management
+    print(user.data)
+    from contacts_secure import add_contact, list_contacts
+    while True:
+        cmd = input(colored("secure_drop>" , "yellow")).strip().lower()
+        if not user.password_hash or not user.salt:
+            print(colored("Error: User credentials missing. Please log in again.", "red"))
+            break
+        if cmd == "add":
+            contact_email = None
+            while not contact_email:
+                contact_email = input(colored("Enter contact's email: ", "yellow")).strip()
+                if not re.match(r"^[\w\.-]+@[\w\.-]+\.\w+$", contact_email):
+                    print(colored("Invalid email format.", "red"))
+                    contact_email = None
+                    continue
+            try:
+                add_contact(user.email, user.password_hash, user.salt, contact_email)
+                print(colored(f"Contact {contact_email} added.", "green"))
+            except Exception as e:
+                print(colored(f"Error: {e}", "red"))
+        elif cmd == "list":
+            try:
+                contacts = list_contacts(user.email, user.password_hash, user.salt)
+                if contacts and len(contacts) > 0:
+                    print(colored("Your contacts:", "green"))
+                    for c in contacts:
+                        print(f"- {c}")
+                else:
+                    print(colored("No contacts found.", "yellow"))
+            except Exception as e:
+                print(colored(f"Error: {e}", "red"))
+        elif cmd == "exit":
+            print(colored("Exiting SecureDrop...", "cyan"))
+            break
+        elif cmd.lower() == "help":
+            helpMessage()
+        else:
+            print(colored("Unknown command.", "red"))
 
 
 if __name__ == '__main__':
