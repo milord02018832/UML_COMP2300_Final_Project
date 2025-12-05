@@ -9,14 +9,14 @@ from Crypto.Cipher import PKCS1_OAEP
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 
-# Import Milestone 4 modules
-from network_discovery import NetworkDiscovery
-from mutual_auth import MutualAuthServer, MutualAuthClient
+# CHANGE 1: Import Milestone 4 modules
+from network_discovery_secure import NetworkDiscovery
+from mutual_auth_secure import MutualAuthServer, MutualAuthClient
 
 RSA_NONCE_SIZE = 16
 RSA_TAG_SIZE = 16
 
-# Global variables for network services
+# CHANGE 2: Global variables for network services
 discovery_service = None
 auth_server = None
 auth_client = None
@@ -83,6 +83,7 @@ class User():
                     if test_hash == password_hash:
                         self.password_hash = password_hash
                         self.name = ymlUser.get('name')
+                        self.salt = salt  # CHANGE 3: Store salt in user object
                     else:
                         self.email = None
                         self.password_hash = None
@@ -296,11 +297,16 @@ def userLogIn():
     return currentUser
 
 
+# CHANGE 4: New function to start network services
 def start_network_services(user):
     """Initialize and start network discovery and authentication services"""
     global discovery_service, auth_server, auth_client
     
     from contacts_secure import list_contacts
+    from port_manager import get_user_ports, display_port_info
+    
+    # Get unique ports for this user
+    discovery_port, auth_port = get_user_ports(user.email)
     
     # Load user's contacts
     user_contacts = list_contacts(user.email, user.password_hash, user.salt)
@@ -312,26 +318,24 @@ def start_network_services(user):
         public_key = RSA.import_key(f.read())
     
     # Start network discovery service
-    print(colored("Starting network discovery...", "cyan"))
-    discovery_service = NetworkDiscovery(user.email, user_contacts)
-    if discovery_service.start():
-        print(colored("✓ Network discovery active", "green"))
-    else:
-        print(colored("✗ Could not start network discovery", "red"))
+    print(colored("Starting network services...", "cyan"))
+    discovery_service = NetworkDiscovery(user.email, user_contacts, discovery_port)
+    if not discovery_service.start():
+        print(colored("✗ Network discovery failed to start", "red"))
         return False
     
     # Start mutual authentication server
-    print(colored("Starting authentication server...", "cyan"))
-    auth_server = MutualAuthServer(user.email, user_contacts, private_key, public_key)
+    auth_server = MutualAuthServer(user.email, user_contacts, auth_port, private_key, public_key)
     auth_server.start()
-    print(colored("✓ Authentication server active", "green"))
     
     # Create authentication client
     auth_client = MutualAuthClient(user.email, private_key, public_key)
     
+    print(colored("✓ All network services active\n", "green"))
     return True
 
 
+# CHANGE 5: New function to stop network services
 def stop_network_services():
     """Stop all network services"""
     global discovery_service, auth_server
@@ -366,7 +370,7 @@ def main(args=None):
 
     print(f"Hello {user.name}, Welcome to SecureDrop")
     
-    # Start network services (Milestone 4)
+    # CHANGE 6: Start network services (Milestone 4)
     print()  # Blank line for readability
     start_network_services(user)
     
@@ -406,15 +410,16 @@ def main(args=None):
                 save_contacts(user.email, user.password_hash, user.salt, contacts)
                 print(colored(f"Contact {full_name} <{contact_email}> added.", "green"))
                 
-                # Update discovery service with new contact
+                # CHANGE 7: Update discovery service with new contact
                 if discovery_service:
-                    discovery_service.user_contacts = contacts
+                    discovery_service.update_contacts(contacts)
                 if auth_server:
-                    auth_server.user_contacts = contacts
+                    auth_server.update_contacts(contacts)
                     
             except Exception as e:
                 print(colored(f"Error: {e}", "red"))
                 
+        # CHANGE 8: Updated "list" command with mutual authentication
         elif cmd == "list":
             try:
                 if not discovery_service or not auth_client:
@@ -423,6 +428,11 @@ def main(args=None):
                 
                 # Get list of online contacts from discovery
                 print(colored("Scanning network for contacts...", "cyan"))
+                
+                # Wait a moment for discovery to pick up broadcasts
+                import time
+                time.sleep(2)
+                
                 online_emails = discovery_service.get_online_contacts()
                 
                 if not online_emails:
@@ -436,12 +446,9 @@ def main(args=None):
                 for email in online_emails:
                     contact_info = discovery_service.get_contact_info(email)
                     if contact_info:
-                        ip = contact_info['ip']
-                        public_key = contact_info['public_key']
-                        
                         # Perform mutual authentication
                         is_mutual, session_key = auth_client.verify_mutual_contact(
-                            email, ip, public_key
+                            email, contact_info
                         )
                         
                         if is_mutual:

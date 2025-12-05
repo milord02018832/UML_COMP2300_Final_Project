@@ -2,27 +2,25 @@ import socket
 import json
 import threading
 import time
-import os
 from Crypto.PublicKey import RSA
 from Crypto.Cipher import PKCS1_OAEP, AES
 from Crypto.Signature import pkcs1_15
 from Crypto.Hash import SHA256
 from Crypto.Random import get_random_bytes
 import base64
-import platform
 
-# Configuration
-BROADCAST_PORT = 5000
+# Discovery interval
 DISCOVERY_INTERVAL = 5  # seconds
 STALE_TIMEOUT = 15  # seconds
 
 class NetworkDiscovery:
-    def __init__(self, user_email, user_contacts, private_key_path="private.pem", public_key_path="public.pub"):
+    def __init__(self, user_email, user_contacts, discovery_port, private_key_path="private.pem", public_key_path="public.pub"):
         self.user_email = user_email
         self.user_contacts = user_contacts  # list of contact emails
-        self.online_contacts = {}  # {email: {'ip': ip, 'last_seen': time, 'public_key': key, 'session_key': key}}
+        self.online_contacts = {}  # {email: {'ip': ip, 'last_seen': time, 'public_key': key, 'discovery_port': port, 'auth_port': port}}
         self.running = False
         self.sock = None
+        self.discovery_port = discovery_port
         
         # Load RSA keys
         with open(private_key_path, 'rb') as f:
@@ -36,26 +34,18 @@ class NetworkDiscovery:
     def start(self):
         """Start listening for broadcasts and sending presence"""
         self.running = True
+        
+        # Create UDP socket for discovery
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         
-        # Enable SO_REUSEPORT on systems that support it (Linux, macOS)
-        # This allows multiple processes to bind to the same port
         try:
-            # macOS and Linux
-            if hasattr(socket, 'SO_REUSEPORT'):
-                self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-        except AttributeError:
-            pass  # Windows doesn't have SO_REUSEPORT
-        
-        try:
-            self.sock.bind(('', BROADCAST_PORT))
+            self.sock.bind(('', self.discovery_port))
+            print(f"  ✓ Listening on UDP port {self.discovery_port}")
         except OSError as e:
-            print(f"Warning: Could not bind to port {BROADCAST_PORT}: {e}")
-            print("This is normal when running multiple instances on the same machine.")
-            print("Network discovery will still work for receiving broadcasts.")
-            # Don't return False - we can still send broadcasts
+            print(f"  ✗ Could not bind to port {self.discovery_port}: {e}")
+            return False
         
         # Start listener thread
         listener_thread = threading.Thread(target=self._listen_for_presence)
@@ -80,13 +70,9 @@ class NetworkDiscovery:
                 
     def _encrypt_email(self, email):
         """Encrypt email using AES with a temporary session key"""
-        # Generate random session key for this broadcast
         session_key = get_random_bytes(16)
         cipher = AES.new(session_key, AES.MODE_EAX)
         ciphertext, tag = cipher.encrypt_and_digest(email.encode('utf-8'))
-        
-        # For simplicity and security: use signature for authentication
-        # and light encryption for privacy
         nonce = cipher.nonce
         
         return {
@@ -98,7 +84,6 @@ class NetworkDiscovery:
     
     def _sign_message(self, message_dict):
         """Sign a message with private key"""
-        # Create hash of the message
         message_str = json.dumps(message_dict, sort_keys=True)
         h = SHA256.new(message_str.encode('utf-8'))
         signature = pkcs1_15.new(self.private_key).sign(h)
@@ -126,14 +111,19 @@ class NetworkDiscovery:
             cipher = AES.new(session_key, AES.MODE_EAX, nonce=nonce)
             plaintext = cipher.decrypt_and_verify(ciphertext, tag)
             return plaintext.decode('utf-8')
-        except Exception as e:
-            # Silently ignore decryption errors from other instances
+        except Exception:
             return None
                 
     def _broadcast_presence(self):
         """Periodically broadcast encrypted presence on network"""
+        # Import here to avoid circular dependency
+        from port_manager import get_user_ports
+        
         while self.running:
             try:
+                # Get user's auth port to include in broadcast
+                _, auth_port = get_user_ports(self.user_email)
+                
                 # Encrypt the email
                 encrypted_email = self._encrypt_email(self.user_email)
                 
@@ -141,6 +131,8 @@ class NetworkDiscovery:
                     'type': 'presence',
                     'encrypted_email': encrypted_email,
                     'public_key': self.public_key_pem.decode('utf-8'),
+                    'discovery_port': self.discovery_port,
+                    'auth_port': auth_port,
                     'timestamp': time.time()
                 }
                 
@@ -152,22 +144,32 @@ class NetworkDiscovery:
                     'signature': signature
                 })
                 
-                # Create a temporary socket for sending if needed
+                # Broadcast to localhost and network
                 send_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 send_sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-                send_sock.sendto(message.encode('utf-8'), 
-                               ('<broadcast>', BROADCAST_PORT))
-                send_sock.close()
                 
+                # For testing on same machine, broadcast to ALL ports in our range
+                # UDP is fast enough to handle this
+                for port in range(5000, 6000):  # All discovery ports
+                    try:
+                        # Send to localhost (for same-machine testing)
+                        send_sock.sendto(message.encode('utf-8'), ('127.0.0.1', port))
+                        # Also send as broadcast (for network testing)
+                        send_sock.sendto(message.encode('utf-8'), ('<broadcast>', port))
+                    except:
+                        pass
+                
+                send_sock.close()
                 time.sleep(DISCOVERY_INTERVAL)
-            except Exception as e:
-                # Silently continue on broadcast errors
+                
+            except Exception:
                 time.sleep(DISCOVERY_INTERVAL)
                 
     def _listen_for_presence(self):
         """Listen for encrypted presence broadcasts from other clients"""
         while self.running:
             try:
+                self.sock.settimeout(1.0)
                 data, addr = self.sock.recvfrom(4096)
                 message = json.loads(data.decode('utf-8'))
                 
@@ -179,7 +181,6 @@ class NetworkDiscovery:
                 
                 # Verify signature
                 if not self._verify_signature(message_data, signature, sender_public_key):
-                    # Silently ignore invalid signatures
                     continue
                 
                 if message_data['type'] == 'presence':
@@ -195,19 +196,19 @@ class NetworkDiscovery:
                         )
                         
                         if is_contact:
-                            # Store contact info with their public key
+                            # Store contact info with their public key and ports
                             self.online_contacts[email] = {
                                 'ip': addr[0],
                                 'last_seen': time.time(),
                                 'public_key': sender_public_key,
-                                'session_key': None  # Will be established during mutual auth
+                                'discovery_port': message_data.get('discovery_port'),
+                                'auth_port': message_data.get('auth_port'),
+                                'session_key': None
                             }
-            except socket.error:
-                # Socket might be closed or timeout
-                if self.running:
-                    time.sleep(0.1)
-            except Exception as e:
-                # Silently ignore parsing errors from malformed packets
+                            
+            except socket.timeout:
+                continue
+            except Exception:
                 pass
                 
     def get_online_contacts(self):
@@ -226,3 +227,7 @@ class NetworkDiscovery:
     def get_contact_info(self, email):
         """Get stored info for a contact"""
         return self.online_contacts.get(email)
+    
+    def update_contacts(self, new_contacts):
+        """Update the contact list (called when user adds new contacts)"""
+        self.user_contacts = new_contacts

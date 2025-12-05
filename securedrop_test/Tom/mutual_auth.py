@@ -9,12 +9,11 @@ from Crypto.Hash import SHA256
 from Crypto.Random import get_random_bytes
 import base64
 
-AUTH_PORT = 5001
-
 class MutualAuthServer:
-    def __init__(self, user_email, user_contacts, private_key, public_key):
+    def __init__(self, user_email, user_contacts, auth_port, private_key, public_key):
         self.user_email = user_email
         self.user_contacts = user_contacts
+        self.auth_port = auth_port
         self.private_key = private_key
         self.public_key = public_key
         self.server_sock = None
@@ -29,8 +28,10 @@ class MutualAuthServer:
             try:
                 self.server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                self.server_sock.bind(('', AUTH_PORT))
+                
+                self.server_sock.bind(('', self.auth_port))
                 self.server_sock.listen(5)
+                print(f"  ✓ Authentication server listening on TCP port {self.auth_port}")
                 
                 while self.running:
                     try:
@@ -39,11 +40,11 @@ class MutualAuthServer:
                         threading.Thread(target=self._handle_client, args=(client_sock, addr)).start()
                     except socket.timeout:
                         continue
-                    except Exception as e:
+                    except Exception:
                         if self.running:
-                            print(f"Accept error: {e}")
+                            pass
             except Exception as e:
-                print(f"Server error: {e}")
+                print(f"  ✗ Could not start auth server on port {self.auth_port}: {e}")
             finally:
                 if self.server_sock:
                     self.server_sock.close()
@@ -51,6 +52,9 @@ class MutualAuthServer:
         thread = threading.Thread(target=server_loop)
         thread.daemon = True
         thread.start()
+        
+        # Give server time to start
+        time.sleep(0.5)
         
     def stop(self):
         """Stop the authentication server"""
@@ -125,7 +129,7 @@ class MutualAuthServer:
             response_data = {
                 'has_contact': True,
                 'email': self.user_email,
-                'challenge_response': challenge,  # Echo back the challenge
+                'challenge_response': challenge,
                 'encrypted_session_key': base64.b64encode(encrypted_session_key).decode('utf-8'),
                 'timestamp': time.time()
             }
@@ -141,10 +145,9 @@ class MutualAuthServer:
             
             client_sock.sendall(response.encode('utf-8'))
             
-        except Exception as e:
-            print(f"Auth handler error: {e}")
+        except Exception:
             try:
-                error_response = json.dumps({'error': str(e)})
+                error_response = json.dumps({'error': 'Authentication failed'})
                 client_sock.sendall(error_response.encode('utf-8'))
             except:
                 pass
@@ -154,6 +157,10 @@ class MutualAuthServer:
     def get_session_key(self, email):
         """Get established session key for a contact"""
         return self.established_sessions.get(email)
+    
+    def update_contacts(self, new_contacts):
+        """Update the contact list (called when user adds new contacts)"""
+        self.user_contacts = new_contacts
 
 
 class MutualAuthClient:
@@ -181,16 +188,26 @@ class MutualAuthClient:
         except (ValueError, TypeError):
             return False
     
-    def verify_mutual_contact(self, contact_email, contact_ip, contact_public_key):
+    def verify_mutual_contact(self, contact_email, contact_info):
         """
         Verify mutual contact relationship and establish session key
+        contact_info contains: ip, auth_port, public_key
         Returns (has_mutual_relationship, session_key)
         """
         try:
+            contact_ip = contact_info['ip']
+            contact_port = contact_info.get('auth_port')
+            contact_public_key = contact_info['public_key']
+            
+            if not contact_port:
+                # Fallback: try to get port from port manager
+                from port_manager import get_user_ports
+                _, contact_port = get_user_ports(contact_email)
+            
             # Create socket connection
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
-            sock.connect((contact_ip, AUTH_PORT))
+            sock.settimeout(5)
+            sock.connect((contact_ip, contact_port))
             
             # Generate challenge (random nonce)
             challenge = base64.b64encode(get_random_bytes(32)).decode('utf-8')
@@ -222,7 +239,6 @@ class MutualAuthClient:
             
             # Check for error
             if 'error' in response:
-                print(f"Authentication error: {response['error']}")
                 return False, None
             
             # Verify response structure
@@ -234,7 +250,6 @@ class MutualAuthClient:
             
             # Import and verify with contact's public key
             if not self._verify_signature(response_msg, response_sig, contact_public_key):
-                print("Warning: Invalid response signature")
                 return False, None
             
             # Check if they have us as a contact
@@ -243,7 +258,6 @@ class MutualAuthClient:
             
             # Verify challenge response
             if response_msg.get('challenge_response') != challenge:
-                print("Warning: Challenge response mismatch")
                 return False, None
             
             # Decrypt session key
@@ -256,11 +270,9 @@ class MutualAuthClient:
             
             return True, session_key
             
-        except socket.timeout:
-            print(f"Connection to {contact_email} timed out")
+        except (socket.timeout, ConnectionRefusedError, OSError):
             return False, None
-        except Exception as e:
-            print(f"Verification error with {contact_email}: {e}")
+        except Exception:
             return False, None
     
     def get_session_key(self, email):
